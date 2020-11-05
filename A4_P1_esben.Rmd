@@ -54,8 +54,13 @@ The data files can be found here: https://www.dropbox.com/sh/bvvk7t3fvsplh9o/AAD
 
 ```{r}
 # Load the libraries
+pacman::p_load(tidyverse)
 
 # Load the file
+df_synch <- read_csv("data/Study1_G1_T1_Synchronous.csv")
+df_turn <- read_csv("data/Study1_G1_T1_TurnTaking.csv")
+df_paced <- read_csv("data/Study1_G1_T3_SelfPaced.csv")
+
 # Plot
 
 ## Remove outliers
