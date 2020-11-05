@@ -55,7 +55,7 @@ The data files can be found here: https://www.dropbox.com/sh/bvvk7t3fvsplh9o/AAD
 ```{r}
 # Load the libraries
 library(tidyverse)
-library(fs)
+library(fs) 
 
 # Load the file
 test_file <- "./data/Study1_G1_T1_Synchronous.csv"
@@ -77,22 +77,52 @@ removeOuts <- function(ts,threshold){
              (threshold*sd(ts,na.rm=T)))] <-  mean(ts,na.rm=T)
   ts
 }
+
+find_outs <- function(vec, threshold) {
+  positive_outliers <- vec > mean(vec, na.rm=T) + (threshold * sd(vec, na.rm = T))
+  negative_outliers <- vec < mean(vec, na.rm=T) - (threshold * sd(vec, na.rm = T))
+  positive_outliers | negative_outliers
+}
+
+replace_outs <- function(vec, threshold) {
+  if_else(find_outs(vec, threshold), mean(vec, na.rm = T), vec)
+}
+
 threshold=2.5 # Default value at 2.5 sds from the mean. But you can increase it, if you want.
 
 
 # Plot raw data against those with the artifacts removed
-example_data %>% 
-  ggplot(aes(x = time, y = Resp, colour = Participant)) + 
+outlier_plot <- example_data %>% 
+  ggplot(aes(x = row_num, y = Resp, colour = Participant)) + 
   geom_path()
+
+example_no_out <- example_data %>% 
+  group_by(Participant) %>% 
+  mutate(across(c(Resp, ECG, HR), ~replace_outs(.x, threshold)))
+
+no_out_plot <- example_no_out %>% 
+  ggplot(aes(x = row_num, y = Resp, colour = Participant)) + 
+  geom_path()
+
+ggpubr::ggarrange(outlier_plot, no_out_plot, nrow = 2)
+
 
 
 ## Scale
 ### Tip: if scale() gives some issues, try the one below
-#z_scale <- function(column){
-#  column_c <- (column - mean(column)) / sd(column)
-#}
+z_scale <- function(column){
+  (column - mean(column)) / sd(column)
+}
 
 # Plot again to check how scaled data look like
+example_data_scaled <- example_data %>% 
+  mutate(across(c(ECG, HR, Resp), z_scale))
+
+example_data_scaled %>% 
+  
+  ggplot(aes(x = row_num, y = HR, colour = Participant)) + 
+  geom_path()
+
 
 
 ## Downsample
