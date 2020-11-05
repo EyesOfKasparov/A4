@@ -62,7 +62,16 @@ df_turn <- read_csv("data/Study1_G1_T1_TurnTaking.csv")
 df_paced <- read_csv("data/Study1_G1_T3_SelfPaced.csv")
 
 # Plot
+df_synch %>% 
+  mutate(rownum=row_number()) %>% 
+  pivot_longer(cols=c("Resp1", "Resp2", "ECG1", "ECG2", "HR1", "HR2")) %>% 
+  mutate(name=as.factor(name)) 
 
+
+```
+
+
+```{r}
 ## Remove outliers
 
 ### Tip, check the function below. This is the function explained in the video lecture
