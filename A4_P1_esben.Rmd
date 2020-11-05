@@ -65,9 +65,11 @@ removeOuts <- function(ts,threshold){
   ts[ts > (mean(ts,na.rm=T) +
              (threshold*sd(ts,na.rm=T))) | 
        ts < (mean(ts,na.rm=T) -
-             (threshold*sd(ts,na.rm=T)))] = mean(ts,na.rm=T)
+             (threshold*sd(ts,na.rm=T)))] <- mean(ts,na.rm=T)
+  return(ts)
 }
-threshold=2.5 # Default value at 2.5 sds from the mean. But you can increase it, if you want.
+
+threshold <- 2.5 # Default value at 2.5 sds from the mean. But you can increase it, if you want.
 
 
 # Plot raw data against those with the artifacts removed

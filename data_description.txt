@@ -1,0 +1,13 @@
+Files per study number:
+Groups 1-4 * 3 conditions
+Groups 5-10 * 3 conditions
+10 groups * 3 conditions
+Groups 1-8 * 5 conditions
+
+Data description: Many large files.
+Rowname: row_number()
+Time: Minutes of 10Hz
+Respiration 1: Amplitudes. Participant 1 of pair
+Respiration 2: P2
+Heart rate 1: P1, BPM
+Heart rate 2: P2, BPM
