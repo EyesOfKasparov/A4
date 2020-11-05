@@ -6,8 +6,9 @@ Groups 1-8 * 5 conditions
 
 Data description: Many large files.
 Rowname: row_number()
-Time: Minutes of 10Hz
+Time: Minutes in ~ 167Hz
 Respiration 1: Amplitudes. Participant 1 of pair
 Respiration 2: P2
 Heart rate 1: P1, BPM
 Heart rate 2: P2, BPM
+
