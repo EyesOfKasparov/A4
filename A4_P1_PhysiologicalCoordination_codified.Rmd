@@ -56,15 +56,25 @@ The data files can be found here: https://www.dropbox.com/sh/bvvk7t3fvsplh9o/AAD
 # Load the libraries
 library(tidyverse)
 library(fs) 
+library(forecast)
+
 
 # Load the file
-test_file <- "./data/Study1_G1_T1_Synchronous.csv"
+test_file <- "./data/Study1_G2_T1_TurnTaking.csv"
 example_data_raw <- read_csv(test_file)
 
 # Making into tidy format
 example_data <- example_data_raw %>% 
   mutate(row_num = row_number()) %>% 
   pivot_longer(Resp1:HR2, names_to = c(".value", "Participant"), names_pattern = "(Resp|ECG|HR)(\\d)")
+
+
+example_data_raw %>% 
+  ggplot(aes(x = Resp1)) + 
+  geom_histogram()
+
+test_outlier <- forecast::tsoutliers(example_data_raw$HR1)
+
 
 example_data %>% head()
 ## Remove outliers
