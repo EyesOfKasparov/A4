@@ -151,10 +151,20 @@ downsampled_data <- example_data %>%
   summarise(across(where(is_double), mean))
 
 ## Now add the group, trial, condition to the cleaned up, scaled, downsampled data
+downsampled_data %>% 
+  group_by(Participant) %>% 
+  mutate(across(where(is_double), ~dplyr::lag(.x, order_by=time), .names = "{.col}_lag")) %>% 
+  mutate(across(where(is_double), ~find_outs(.x, 2.5), .names = "{.col}_is_out"))
 
-
+downsampled_data %>% mutate(
+  study_nr = str_extract(test_file, "(?<=Study)(\\d)"), 
+  group_nr = str_extract(test_file, "(?<=_G)(\\d)"), 
+  trial_nr = str_extract(test_file, "(?<=_T)(\\d)"),
+  condition = str_extract(test_file, "[a-zA-Z]+(?=\\.csv)")
+)
 ## Tip the info is in the file name
 outlier_plot
+?across
 
 ```
 
