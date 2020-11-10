@@ -56,8 +56,7 @@ The data files can be found here: https://www.dropbox.com/sh/bvvk7t3fvsplh9o/AAD
 # Load the libraries
 library(tidyverse)
 library(fs) 
-library(forecast)
-
+library(groupdata2)
 
 # Load the file
 test_file <- "./data/Study1_G2_T1_TurnTaking.csv"
@@ -73,10 +72,7 @@ example_data_raw %>%
   ggplot(aes(x = Resp1)) + 
   geom_histogram()
 
-test_outlier <- forecast::tsoutliers(example_data_raw$HR1)
 
-
-example_data %>% head()
 ## Remove outliers
 
 ### Tip, check the function below. This is the function explained in the video lecture
@@ -147,13 +143,18 @@ example_data_scaled %>%
 #    Resp2 = mean(Resp2S,na.rm=T),
 #    rowname = rowname[1]) #the index we use to put them back together 
 
-## Plot the downsampled data. You can use the code from the slides
 
+## Plot the downsampled data. You can use the code from the slides
+downsampled_data <- example_data %>% 
+  group(100, method = "greedy") %>% 
+  group_by(.groups, Participant) %>% 
+  summarise(across(where(is_double), mean))
 
 ## Now add the group, trial, condition to the cleaned up, scaled, downsampled data
 
-## Tip the info is in the file name
 
+## Tip the info is in the file name
+outlier_plot
 
 ```
 
