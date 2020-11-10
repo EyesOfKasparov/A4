@@ -57,16 +57,31 @@ The data files can be found here: https://www.dropbox.com/sh/bvvk7t3fvsplh9o/AAD
 pacman::p_load(tidyverse)
 
 # Load the file
-df_synch <- read_csv("data/Study1_G1_T1_Synchronous.csv")
-df_turn <- read_csv("data/Study1_G1_T1_TurnTaking.csv")
-df_paced <- read_csv("data/Study1_G1_T3_SelfPaced.csv")
+df_sync_raw <- read_csv("data/Study1_G3_T3_Synchronous.csv")
+df_turn_raw <- read_csv("data/Study1_G3_T2_TurnTaking.csv")
+df_paced_raw <- read_csv("data/Study1_G3_T1_SelfPaced.csv")
 
-# Plot
-df_synch %>% 
+df_sync <- df_sync_raw %>% 
   mutate(rownum=row_number()) %>% 
-  pivot_longer(cols=c("Resp1", "Resp2", "ECG1", "ECG2", "HR1", "HR2")) %>% 
-  mutate(name=as.factor(name)) 
+  pivot_longer(Resp1:HR2, names_to = c(".value", "Participant"), names_pattern = "(Resp|ECG|HR)(\\d)")
 
+```
+
+
+```{r}
+# Plot
+library(tidyverse)
+# REGEX
+string <- "./data/Study2_G2_T1_TurnTaking.csv"
+
+string %>% 
+  str_extract("(?<=Study)(\\d)")
+
+string %>% 
+  str_extract("(?<=_G)(\\d)")
+
+string %>% 
+  str_extract("(?<=_T)(\\d)")
 
 ```
 
