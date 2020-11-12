@@ -73,16 +73,6 @@ replace_outs <- function(vec, threshold) {
   if_else(find_outs(vec, threshold), mean(vec, na.rm = T), vec)
 }
 
-add_metadata <- function(dat, file_name) {
-  dat %>%
-    mutate(
-      study_nr = str_extract(file_name, "(?<=Study)(\\d)"),
-      group_nr = str_extract(file_name, "(?<=_G)(\\d)"),
-      trial_nr = str_extract(file_name, "(?<=_T)(\\d)"),
-      condition = str_extract(file_name, "[a-zA-Z]+(?=\\.csv)"),
-      pair_id = paste(study_nr, group_nr, sep = "_")
-    )
-}
 
 downsample_data <- function(dat) {
   dat %>%
@@ -96,6 +86,59 @@ z_scale <- function(column){
   (column - mean(column, na.rm = T)) / sd(column, na.rm = T)
 }
 
+add_metadata <- function(dat, file_name) {
+  dat %>%
+    mutate(
+      study_nr = str_extract(file_name, "(?<=Study)(\\d)"),
+      group_nr = str_extract(file_name, "(?<=_G)(\\d)"),
+      trial_nr = str_extract(file_name, "(?<=_T)(\\d)"),
+      condition = str_extract(file_name, "[a-zA-Z]+(?=\\.csv)"),
+      pair_id = paste(study_nr, group_nr, sep = "_"),  
+      participant_id = paste(pair_id, Participant, sep = "_"),
+      participant_trial_id = paste(participant_id, trial_nr, sep = "_")
+    )
+}
+
+data_preprocess <- function(filename, threshold = 2.5) {
+  raw_dat <- read_csv(filename)  %>%
+    mutate(row_num = row_number()) %>% 
+    select(row_num, Resp1, Resp2, ECG1, ECG2, HR1, HR2)
+ 
+  # Making into tidy format
+  tidy_data <- raw_dat %>%
+    pivot_longer(
+      Resp1:HR2,
+      names_to = c(".value", "Participant"),
+      names_pattern = "(Resp|ECG|HR)(\\d)"
+    )
+  
+  #print(paste0("tidy file: ", filename))
+  # removing outliers
+  no_outs <- tidy_data %>% 
+    group_by(Participant) %>% 
+    mutate(across(c(Resp, ECG, HR), ~replace_outs(.x, threshold)))
+  
+  #print("remove outliers")
+  # downsampling
+  downsampled_data <- no_outs %>% 
+    downsample_data()
+  
+  #print("downsampled")
+  # scaling
+  scaled_data <- downsampled_data %>% 
+    group_by(Participant) %>% 
+    mutate(across(c(Resp, ECG, HR), z_scale))
+  #print("scaled")
+  # adding metadata
+  d1 <- scaled_data %>% 
+    add_metadata(filename)
+  #print("added metadata")
+  
+ # print(paste0("done with ", filename))
+  
+  
+  return(d1)
+}
 ```
 
 ```{r}
@@ -121,13 +164,6 @@ example_data_raw %>%
 ## Remove outliers
 
 ### Tip, check the function below. This is the function explained in the video lecture
-removeOuts <- function(ts,threshold){
-  ts[ts > (mean(ts,na.rm=T) +
-             (threshold*sd(ts,na.rm=T))) | 
-       ts < (mean(ts,na.rm=T) -
-             (threshold*sd(ts,na.rm=T)))] <-  mean(ts,na.rm=T)
-  ts
-}
 
 
 
@@ -186,27 +222,6 @@ example_data_scaled %>%
 
 
 
-## Handling outliers
-```{r}
-add_metadata <- function(dat, file_name) {
-  dat %>%
-    mutate(
-      study_nr = str_extract(file_name, "(?<=Study)(\\d)"),
-      group_nr = str_extract(file_name, "(?<=_G)(\\d)"),
-      trial_nr = str_extract(file_name, "(?<=_T)(\\d)"),
-      condition = str_extract(file_name, "[a-zA-Z]+(?=\\.csv)"),
-      pair_id = paste(study_nr, group_nr, sep = "_")
-    )
-}
-
-downsample_data <- function(dat) {
-  dat %>%
-    group(100, method = "greedy") %>%
-    group_by(.groups, Participant) %>%
-    summarise(across(where(is_double), mean))
-}
-
-```
 
 
 ## Now we are ready to go to load and pre-process all files
@@ -223,47 +238,7 @@ A couple of tips:
 ```{r}
 # Define a function running the loading, artifact removal, scaling, downsampling, info adding.
 
-data_preprocess <- function(filename, threshold = 2.5) {
-  raw_dat <- read_csv(filename)  %>%
-    mutate(row_num = row_number()) %>% 
-    select(row_num, Resp1, Resp2, ECG1, ECG2, HR1, HR2)
- 
-  # Making into tidy format
-  tidy_data <- raw_dat %>%
-    pivot_longer(
-      Resp1:HR2,
-      names_to = c(".value", "Participant"),
-      names_pattern = "(Resp|ECG|HR)(\\d)"
-    )
-  
-  #print(paste0("tidy file: ", filename))
-  # removing outliers
-  no_outs <- tidy_data %>% 
-    group_by(Participant) %>% 
-    mutate(across(c(Resp, ECG, HR), ~replace_outs(.x, threshold)))
-  
-  #print("remove outliers")
-  # downsampling
-  downsampled_data <- no_outs %>% 
-    downsample_data()
-  
-  print("downsampled")
-  # scaling
-  scaled_data <- downsampled_data %>% 
-    group_by(Participant) %>% 
-    mutate(across(c(Resp, ECG, HR), z_scale))
-  print("scaled")
-  # adding metadata
-  d1 <- scaled_data %>% 
-    add_metadata(filename)
-  #print("added metadata")
-  
- # print(paste0("done with ", filename))
-  
-  
-  return(d1)
-  
-}
+
 
 #  Identify all files to be read
 all_files <- fs::dir_ls(path = "./data", glob = "*.csv")
@@ -314,7 +289,7 @@ Bonus question: what if we include an additional layer? Is my heart rate just ad
 master_data %>% 
   mutate(file_id = paste(pair_id, trial_nr, sep="_")) %>% 
   group_by(file_id, Participant) %>% 
-  mutate(across(Resp:ECG, lag, .names = "{.col}_"))
+  mutate(across(Resp:ECG, lag, .names = "{.col}_lag"))
 
 
 
