@@ -220,10 +220,12 @@ A couple of tips:
 # Define a function running the loading, artifact removal, scaling, downsampling, info adding.
 
 data_preprocess <- function(filename, threshold = 2.5) {
-  raw_data <- read_csv(filename)
-  
+  raw_dat <- read_csv(filename)  %>%
+    mutate(row_num = row_number()) %>% 
+    select(row_num, Resp1, Resp2, ECG1, ECG2, HR1, HR2)
+ 
   # Making into tidy format
-  tidy_data <- raw_data %>%
+  tidy_data <- raw_dat %>%
     mutate(row_num = row_number()) %>%
     pivot_longer(
       Resp1:HR2,
@@ -231,36 +233,52 @@ data_preprocess <- function(filename, threshold = 2.5) {
       names_pattern = "(Resp|ECG|HR)(\\d)"
     )
   
+  #print(paste0("tidy file: ", filename))
   # removing outliers
   no_outs <- tidy_data %>% 
     group_by(Participant) %>% 
     mutate(across(c(Resp, ECG, HR), ~replace_outs(.x, threshold)))
-
+  
+  #print("remove outliers")
   # downsampling
   downsampled_data <- no_outs %>% 
     downsample_data()
   
+  print("downsampled")
   # scaling
   scaled_data <- downsampled_data %>% 
     group_by(Participant) %>% 
     mutate(across(c(Resp, ECG, HR), z_scale))
-
+  print("scaled")
   # adding metadata
   d1 <- scaled_data %>% 
     add_metadata(filename)
+  #print("added metadata")
+  
+ # print(paste0("done with ", filename))
   
   
   return(d1)
   
 }
 
-testy_test <- data_preprocess(test_file, threshold = 3)
+testy_test <- data_preprocess(filename, threshold = 3)
+testy_test2 <- data_preprocess("./data/Study1_G1_T2_TurnTaking.csv", threshold = 3)
 
+bind_rows(testy_test, testy_test2)
 #  Identify all files to be read
+all_files <- fs::dir_ls(path = "./data", glob = "*.csv")
 
+filename <- "./data/Study4_G8_T5_MovementGuided.csv"
+
+new_files <- all_files[all_files != filename]
+
+data_preprocess("./data/Study4_G8_T5_MovementGuided.csv", threshold = 1)
 # Run the function on the whole dataset using map_df
-
+master_data <- all_files %>% 
+  map_dfr(data_preprocess)
          
+
 # Now we need to make sure all the data are meaningful or something has to be removed
 # E.g. "Study1_G1_T1_Synchronous" has one bad respiration signal. We could replace it with NAs
 
