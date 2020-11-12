@@ -247,7 +247,7 @@ all_files <- fs::dir_ls(path = "./data", glob = "*.csv")
 master_data <- all_files %>% 
   map_dfr(data_preprocess)
          
-write_csv(master_data, "./data/master_data/master_data.csv")
+write_csv(master_data, "master_data.csv")
 
 # Now we need to make sure all the data are meaningful or something has to be removed
 # E.g. "Study1_G1_T1_Synchronous" has one bad respiration signal. We could replace it with NAs
@@ -286,17 +286,22 @@ Bonus question: what if we include an additional layer? Is my heart rate just ad
 
 # Generate a column for each: previous HR1, HR2, Resp1, Resp2. Tip: use the function Lag()
 # Generate a column for each: change in HR1, HR2, Resp1, Resp2
-master_data %>% 
+master_data <- master_data %>% 
   mutate(file_id = paste(pair_id, trial_nr, sep="_")) %>% 
-  group_by(file_id, Participant) %>% 
-  mutate(across(Resp:ECG, lag, .names = "{.col}_lag"))
+  group_by(participant_trial_id) %>% 
+  # Create lag
+  mutate(across(c(HR, ECG, Resp), lag, .names = "{.col}_lag")) %>% 
+  ungroup() %>% 
+  # Create
+  mutate(delta_Resp = Resp-Resp_lag, 
+         delta_ECG = ECG-ECG_lag, 
+         delta_HR = HR-HR_lag)
 
-
-
-# Make the data long, so we can analyze both participants at the same time. Tip: you can use the function gather () 
-## N.B. This is a bit tricky and you might have to do it in several steps
 
 # Set the most interesting contrast e.g. by defining synchronous or conversation as the baseline
+# lmer(HR_self ~ 0 + (HR_self_lag + HR_other_lag):condition +
+#        (1 + ....),
+#      data...
 
 # Model change as a function of own and other previous state 
 
