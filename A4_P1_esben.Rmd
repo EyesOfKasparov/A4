@@ -52,7 +52,7 @@ The data files can be found here: https://www.dropbox.com/sh/bvvk7t3fvsplh9o/AAD
 - downsample the data
 - Add a column for study, group, trial and condition
 
-```{r}
+```{r echo=F, include=F}
 # Load the libraries
 pacman::p_load(tidyverse)
 
@@ -82,29 +82,35 @@ ZScale <- function(column) {
 }
 
 LoadData <- function(paths, threshold) {
-  df <- tibble()
-  for (path in paths) {
-    data_path <- read_csv(path) %>% 
-      Preprocess(path) %>% 
-      mutate(Resp = RemoveOuts(Resp, threshold),
-             ECG = RemoveOuts(ECG, threshold),
-             HR = RemoveOuts(HR, threshold)) %>% 
-      mutate(across(c(where(is.numeric), -time), ZScale))
-    
-    df <- df %>% rbind(data_path)
-  }
-  return(df)
+  paths %>% 
+    map_dfr(function(x) {
+      data_path <- read_csv(x)
+      tryCatch({
+        data_path <- data_path %>% Preprocess(x)
+      
+        data_path$Resp <- ReplaceOuts(data_path$Resp, threshold)
+        data_path$ECG <- ReplaceOuts(data_path$ECG, threshold)
+        data_path$HR <- ReplaceOuts(data_path$HR, threshold)
+        data_path$Resp <- ZScale(data_path$Resp)
+        data_path$ECG <- ZScale(data_path$ECG)
+        data_path$HR <- ZScale(data_path$HR)
+        
+        data_path
+      },
+      error=function(cond){
+        data.frame(.groups=c(),Participant=c(),rownum=c(),Resp=c(),ECG=c(),HR=c(),study=c(),group=c(),trial=c(),experiment=c())
+      })
+  })
 }
 
-### Tip, check the function below. This is the function explained in the video lecture
-RemoveOuts <- function(ts,threshold){
-   
-  ts[ts > (mean(ts,na.rm=T) +
-             (threshold*sd(ts,na.rm=T))) | 
-       ts < (mean(ts,na.rm=T) -
-             (threshold*sd(ts,na.rm=T)))] <- mean(ts,na.rm=T)
-  return(ts)
-  
+FindOuts <- function(vec, threshold) {
+  positive_outliers <- vec > mean(vec, na.rm=T) + (threshold * sd(vec, na.rm = T))
+  negative_outliers <- vec < mean(vec, na.rm=T) - (threshold * sd(vec, na.rm = T))
+  positive_outliers | negative_outliers
+}
+
+ReplaceOuts <- function(vec, threshold){
+  if_else(FindOuts(vec, threshold), mean(vec, na.rm = T), vec)
 }
 
 Preprocess <- function(df, path) {
@@ -115,8 +121,11 @@ Preprocess <- function(df, path) {
                  names_to = c(".value", "Participant"),
                  names_pattern = "(Resp|ECG|HR)(\\d)") %>%
     groupdata2::group(100, method = "greedy") %>%
-    group_by(.groups, Participant) %>%
-    summarise(across(where(is_double), mean)) %>%
+    dplyr::group_by(.groups, Participant) %>%
+    dplyr::summarise(rownum = mean(rownum),
+              Resp = mean(Resp),
+              ECG = mean(ECG),
+              HR = mean(HR)) %>%
     mutate(
       study = str_extract(path, "(?<=Study)(\\d)"),
       group = str_extract(path, "(?<=_G)(\\d)"),
@@ -129,44 +138,17 @@ Preprocess <- function(df, path) {
 threshold <- 3 # Default value at 2.5 sds from the mean. But you can increase it, if you want.
 data_source <- "data/Study1_G3_T3_Synchronous.csv"
 df <- LoadData(c(data_source), threshold)
-df
-
-# Plot raw data against those with the artifacts removed
-
-
-## Scale
-### Tip: if scale() gives some issues, try the one below
-#z_scale <- function(column){
-#  column_c <- (column - mean(column)) / sd(column)
-#}
-
-# Plot again to check how scaled data look like
-
-
-## Downsample
-### You can use the code below. It is almost the same as the one in the video lecture.
-#d1 = d %>%
-#  group(n = 100, method = 'greedy') %>%
-#  dplyr::summarise(
-#    time = mean(time,na.rm=T),
-#    HR1 = mean(HR1S,na.rm=T),
-#    HR2 = mean(HR2S,na.rm=T),
-#    Resp1 = mean(Resp1S,na.rm=T),
-#    Resp2 = mean(Resp2S,na.rm=T),
-#    rowname = rowname[1]) #the index we use to put them back together 
-
-## Plot the downsampled data. You can use the code from the slides
-LoadData <- function(path) {
-  
-  
-  
-}
 
 ## Now add the group, trial, condition to the cleaned up, scaled, downsampled data
-downsampled_data
+df %>%
+  ggplot() +
+  aes(rownum, Resp, colour = Participant) +
+  geom_line(alpha=0.4) +
+  geom_smooth(method="loess", se=F) +
+  scale_colour_manual(values = c("#239242", "#432193")) +
+  theme_minimal()
 
 ## Tip the info is in the file name
-
 
 ```
 
@@ -185,21 +167,29 @@ A couple of tips:
 ```{r}
 # Define a function running the loading, artifact removal, scaling, downsampling, info adding.
 
-data_preprocess <- function(filename, threshold = 2.5){
-  
-  # To be filled in
-  
-  return(d1)
-
-}
 
 #  Identify all files to be read
 
 # Run the function on the whole dataset using map_df
+df <- sapply(list.files("data", pattern="*.csv",include.dirs = T), function(x) paste0("data/", x)) %>% 
+  LoadData(threshold)
 
-         
+df$rownum <- round(df$rownum)
+write_csv(df, "data/masterdata/esben.csv")
+```
+
+
+```{r}
+
+
 # Now we need to make sure all the data are meaningful or something has to be removed
 # E.g. "Study1_G1_T1_Synchronous" has one bad respiration signal. We could replace it with NAs
+
+sapply(list.files("data", pattern="*.csv",include.dirs = T), function(x){
+  paste0("data/", x) %>% 
+  read_csv %>% 
+  colnames
+})
 
 # plots plots plots
 
