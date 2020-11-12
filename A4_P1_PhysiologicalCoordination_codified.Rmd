@@ -52,11 +52,54 @@ The data files can be found here: https://www.dropbox.com/sh/bvvk7t3fvsplh9o/AAD
 - downsample the data
 - Add a column for study, group, trial and condition
 
+## Library
 ```{r}
 # Load the libraries
 library(tidyverse)
 library(fs) 
 library(groupdata2)
+```
+
+
+## Helper functions
+```{r}
+find_outs <- function(vec, threshold) {
+  positive_outliers <- vec > mean(vec, na.rm=T) + (threshold * sd(vec, na.rm = T))
+  negative_outliers <- vec < mean(vec, na.rm=T) - (threshold * sd(vec, na.rm = T))
+  positive_outliers | negative_outliers
+}
+
+replace_outs <- function(vec, threshold) {
+  if_else(find_outs(vec, threshold), mean(vec, na.rm = T), vec)
+}
+
+add_metadata <- function(dat, file_name) {
+  dat %>%
+    mutate(
+      study_nr = str_extract(file_name, "(?<=Study)(\\d)"),
+      group_nr = str_extract(file_name, "(?<=_G)(\\d)"),
+      trial_nr = str_extract(file_name, "(?<=_T)(\\d)"),
+      condition = str_extract(file_name, "[a-zA-Z]+(?=\\.csv)"),
+      pair_id = paste(study_nr, group_nr, sep = "_")
+    )
+}
+
+downsample_data <- function(dat) {
+  dat %>%
+    group(100, method = "greedy") %>%
+    group_by(.groups, Participant) %>%
+    summarise(across(where(is_double), mean))
+}
+
+### Tip: if scale() gives some issues, try the one below
+z_scale <- function(column){
+  (column - mean(column, na.rm = T)) / sd(column, na.rm = T)
+}
+
+```
+
+```{r}
+
 
 # Load the file
 test_file <- "./data/Study1_G2_T1_TurnTaking.csv"
@@ -86,15 +129,7 @@ removeOuts <- function(ts,threshold){
   ts
 }
 
-find_outs <- function(vec, threshold) {
-  positive_outliers <- vec > mean(vec, na.rm=T) + (threshold * sd(vec, na.rm = T))
-  negative_outliers <- vec < mean(vec, na.rm=T) - (threshold * sd(vec, na.rm = T))
-  positive_outliers | negative_outliers
-}
 
-replace_outs <- function(vec, threshold) {
-  if_else(find_outs(vec, threshold), mean(vec, na.rm = T), vec)
-}
 
 threshold=3 # Default value at 2.5 sds from the mean. But you can increase it, if you want.
 
@@ -118,9 +153,7 @@ ggpubr::ggarrange(outlier_plot, no_out_plot, nrow = 2)
 
 ## Scale
 ### Tip: if scale() gives some issues, try the one below
-z_scale <- function(column){
-  (column - mean(column, na.rm = T)) / sd(column, na.rm = T)
-}
+
 
 # Plot again to check how scaled data look like
 example_data_scaled <- example_data %>% 
@@ -147,38 +180,9 @@ example_data_scaled %>%
 
 
 
-## Plot the downsampled data. You can use the code from the slides
-downsampled_data <- example_data %>% 
-  group(100, method = "greedy") %>% 
-  group_by(.groups, Participant) %>% 
-  summarise(across(where(is_double), mean))
-
-## Now add the group, trial, condition to the cleaned up, scaled, downsampled data
-downsampled_data %>% 
-  group_by(Participant) %>% 
-  mutate(across(where(is_double), ~dplyr::lag(.x, order_by=time), .names = "{.col}_lag")) %>% 
-  mutate(across(where(is_double), ~find_outs(.x, 2.5), .names = "{.col}_is_out"))
-
-downsampled_data %>% mutate(
-  study_nr = str_extract(test_file, "(?<=Study)(\\d)"), 
-  group_nr = str_extract(test_file, "(?<=_G)(\\d)"), 
-  trial_nr = str_extract(test_file, "(?<=_T)(\\d)"),
-  condition = str_extract(test_file, "[a-zA-Z]+(?=\\.csv)")
-)
-## Tip the info is in the file name
-outlier_plot
-?across
 
 ```
 
-## Downsampling
-```{r}
-## Plot the downsampled data. You can use the code from the slides
-downsampled_data <- example_data %>% 
-  group(100, method = "greedy") %>% 
-  group_by(.groups, Participant) %>% 
-  summarise(across(where(is_double), mean))
-```
 
 
 
@@ -262,22 +266,14 @@ data_preprocess <- function(filename, threshold = 2.5) {
   
 }
 
-testy_test <- data_preprocess(filename, threshold = 3)
-testy_test2 <- data_preprocess("./data/Study1_G1_T2_TurnTaking.csv", threshold = 3)
-
-bind_rows(testy_test, testy_test2)
 #  Identify all files to be read
 all_files <- fs::dir_ls(path = "./data", glob = "*.csv")
 
-filename <- "./data/Study4_G8_T5_MovementGuided.csv"
-
-new_files <- all_files[all_files != filename]
-
-data_preprocess("./data/Study4_G8_T5_MovementGuided.csv", threshold = 1)
 # Run the function on the whole dataset using map_df
 master_data <- all_files %>% 
   map_dfr(data_preprocess)
          
+write_csv(master_data, "./data/master_data/master_data.csv")
 
 # Now we need to make sure all the data are meaningful or something has to be removed
 # E.g. "Study1_G1_T1_Synchronous" has one bad respiration signal. We could replace it with NAs
@@ -316,6 +312,8 @@ Bonus question: what if we include an additional layer? Is my heart rate just ad
 
 # Generate a column for each: previous HR1, HR2, Resp1, Resp2. Tip: use the function Lag()
 # Generate a column for each: change in HR1, HR2, Resp1, Resp2
+
+
 
 
 # Make the data long, so we can analyze both participants at the same time. Tip: you can use the function gather () 
