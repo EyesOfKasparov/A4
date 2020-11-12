@@ -180,16 +180,14 @@ write_csv(df, "data/masterdata/esben.csv")
 
 
 ```{r}
+df <- df %>% 
+  mutate(ID=paste0(study,group,Participant)) %>% 
+  select(ID, everything())
+
 
 
 # Now we need to make sure all the data are meaningful or something has to be removed
 # E.g. "Study1_G1_T1_Synchronous" has one bad respiration signal. We could replace it with NAs
-
-sapply(list.files("data", pattern="*.csv",include.dirs = T), function(x){
-  paste0("data/", x) %>% 
-  read_csv %>% 
-  colnames
-})
 
 # plots plots plots
 
