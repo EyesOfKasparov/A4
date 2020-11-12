@@ -57,7 +57,7 @@ The data files can be found here: https://www.dropbox.com/sh/bvvk7t3fvsplh9o/AAD
 pacman::p_load(tidyverse)
 
 # Load the file
-df_sync_raw <- read_csv("data/Study1_G3_T3_Synchronous.csv")
+df_sync_raw <- read_csv(data_source)
 df_turn_raw <- read_csv("data/Study1_G3_T2_TurnTaking.csv")
 df_paced_raw <- read_csv("data/Study1_G3_T1_SelfPaced.csv")
 
@@ -69,37 +69,67 @@ df_sync <- df_sync_raw %>%
 
 
 ```{r}
-# Plot
-library(tidyverse)
-# REGEX
-string <- "./data/Study2_G2_T1_TurnTaking.csv"
-
-string %>% 
-  str_extract("(?<=Study)(\\d)")
-
-string %>% 
-  str_extract("(?<=_G)(\\d)")
-
-string %>% 
-  str_extract("(?<=_T)(\\d)")
+# Libraries
+library(tidyverse, groupdata2, ggplot2)
 
 ```
 
 
 ```{r}
 ## Remove outliers
+ZScale <- function(column) {
+  (column - mean(column)) / sd(column)
+}
+
+LoadData <- function(paths, threshold) {
+  df <- tibble()
+  for (path in paths) {
+    data_path <- read_csv(path) %>% 
+      Preprocess(path) %>% 
+      mutate(Resp = RemoveOuts(Resp, threshold),
+             ECG = RemoveOuts(ECG, threshold),
+             HR = RemoveOuts(HR, threshold)) %>% 
+      mutate(across(c(where(is.numeric), -time), ZScale))
+    
+    df <- df %>% rbind(data_path)
+  }
+  return(df)
+}
 
 ### Tip, check the function below. This is the function explained in the video lecture
-removeOuts <- function(ts,threshold){
+RemoveOuts <- function(ts,threshold){
+   
   ts[ts > (mean(ts,na.rm=T) +
              (threshold*sd(ts,na.rm=T))) | 
        ts < (mean(ts,na.rm=T) -
              (threshold*sd(ts,na.rm=T)))] <- mean(ts,na.rm=T)
   return(ts)
+  
 }
 
-threshold <- 2.5 # Default value at 2.5 sds from the mean. But you can increase it, if you want.
+Preprocess <- function(df, path) {
+  
+  df %>%
+    mutate(rownum = row_number()) %>%
+    pivot_longer(Resp1:HR2,
+                 names_to = c(".value", "Participant"),
+                 names_pattern = "(Resp|ECG|HR)(\\d)") %>%
+    groupdata2::group(100, method = "greedy") %>%
+    group_by(.groups, Participant) %>%
+    summarise(across(where(is_double), mean)) %>%
+    mutate(
+      study = str_extract(path, "(?<=Study)(\\d)"),
+      group = str_extract(path, "(?<=_G)(\\d)"),
+      trial = str_extract(path, "(?<=_T)(\\d)"),
+      experiment = str_extract(path, "(?<=_T\\d_)(\\w{1,20})")
+    )
+}
 
+
+threshold <- 3 # Default value at 2.5 sds from the mean. But you can increase it, if you want.
+data_source <- "data/Study1_G3_T3_Synchronous.csv"
+df <- LoadData(c(data_source), threshold)
+df
 
 # Plot raw data against those with the artifacts removed
 
@@ -126,9 +156,14 @@ threshold <- 2.5 # Default value at 2.5 sds from the mean. But you can increase 
 #    rowname = rowname[1]) #the index we use to put them back together 
 
 ## Plot the downsampled data. You can use the code from the slides
-
+LoadData <- function(path) {
+  
+  
+  
+}
 
 ## Now add the group, trial, condition to the cleaned up, scaled, downsampled data
+downsampled_data
 
 ## Tip the info is in the file name
 
