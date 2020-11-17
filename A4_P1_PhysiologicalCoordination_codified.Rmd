@@ -292,20 +292,24 @@ master_data <- read_csv("master_data.csv")
 master_data <- master_data %>% 
   mutate(file_id = paste(pair_id, trial_nr, sep="_")) %>% 
   group_by(file_id, Participant) %>% 
-  mutate(across(Resp:ECG, lead, .names = "{.col}_lead"))
+  mutate(across(Resp:HR, lead, .names = "{.col}_lead"))
 
 
 # Make the data long, so we can analyze both participants at the same time. Tip: you can use the function gather () 
 ## N.B. This is a bit tricky and you might have to do it in several steps
 master_data <- master_data %>% 
   ungroup() %>% 
-  mutate(HR1 = if_else(Participant == 1, HR, NA_real_), 
-         HR2 = if_else(Participant == 2, HR, NA_real_)) %>% 
+  rename(HR_self = HR) %>% 
+  mutate(HR1 = if_else(Participant == 1, HR_self, NA_real_), 
+         HR2 = if_else(Participant == 2, HR_self, NA_real_)) %>% 
   fill(HR1) %>% 
   fill(HR2, .direction = "up") %>% 
   mutate(HR_other = if_else(Participant == 1, HR2, HR1)) %>% 
-  rename(HR_self = HR)
+  mutate(delta_HR = HR_lead - HR_self)
 
+
+ggplot(master_data, aes(x = delta_HR)) + 
+  geom_histogram()
 
 
 # Set the most interesting contrast e.g. by defining synchronous or conversation as the baseline
