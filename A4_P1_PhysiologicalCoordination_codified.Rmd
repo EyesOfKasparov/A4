@@ -6,6 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
+rm(list=ls())
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -284,17 +285,28 @@ Bonus question: what if we include an additional layer? Is my heart rate just ad
 
 ```{r}
 
+master_data <- read_csv("master_data.csv")
+
 # Generate a column for each: previous HR1, HR2, Resp1, Resp2. Tip: use the function Lag()
 # Generate a column for each: change in HR1, HR2, Resp1, Resp2
-master_data %>% 
+master_data <- master_data %>% 
   mutate(file_id = paste(pair_id, trial_nr, sep="_")) %>% 
   group_by(file_id, Participant) %>% 
-  mutate(across(Resp:ECG, lag, .names = "{.col}_lag"))
-
+  mutate(across(Resp:ECG, lead, .names = "{.col}_lead"))
 
 
 # Make the data long, so we can analyze both participants at the same time. Tip: you can use the function gather () 
 ## N.B. This is a bit tricky and you might have to do it in several steps
+master_data <- master_data %>% 
+  ungroup() %>% 
+  mutate(HR1 = if_else(Participant == 1, HR, NA_real_), 
+         HR2 = if_else(Participant == 2, HR, NA_real_)) %>% 
+  fill(HR1) %>% 
+  fill(HR2, .direction = "up") %>% 
+  mutate(HR_other = if_else(Participant == 1, HR2, HR1)) %>% 
+  rename(HR_self = HR)
+
+
 
 # Set the most interesting contrast e.g. by defining synchronous or conversation as the baseline
 
