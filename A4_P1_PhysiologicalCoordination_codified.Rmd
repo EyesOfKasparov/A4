@@ -292,7 +292,13 @@ master_data <- read_csv("master_data.csv")
 master_data <- master_data %>% 
   mutate(file_id = paste(pair_id, trial_nr, sep="_")) %>% 
   group_by(file_id, Participant) %>% 
-  mutate(across(Resp:HR, lead, .names = "{.col}_lead"))
+  mutate(across(Resp:HR, ~lead(.x, n = 5), .names = "{.col}_lead")) %>% 
+  mutate(condition = case_when(
+    condition == "SelfPaced" ~ "Conversation", 
+    condition == "MovementCoop" ~ "Synchronous",
+    condition == "MovementGuided" ~ "TurnTaking",
+    TRUE ~ condition
+  ))
 
 
 # Make the data long, so we can analyze both participants at the same time. Tip: you can use the function gather () 
@@ -308,7 +314,8 @@ master_data <- master_data %>%
   mutate(delta_HR = HR_lead - HR_self)
 
 
-ggplot(master_data, aes(x = delta_HR)) + 
+master_data %>% 
+  ggplot(aes(x = delta_HR)) + 
   geom_histogram()
 
 
@@ -316,13 +323,38 @@ ggplot(master_data, aes(x = delta_HR)) +
 # lmer(HR_self ~ 0 + (HR_self_lag + HR_other_lag):condition +
 #        (1 + ....),
 #      data...
+lm1 <- master_data %>% 
+  filter(participant_id == 	"3_8_2") %>% 
+  lm(delta_HR ~ 0 + (HR_self + HR_other):condition, data = .)
+plot(lm1)
+
+summary(lm1)
+
+lm_transform <- master_data %>% 
+  filter(participant_id == 	"3_8_2") %>%
+  mutate(transform_delta_HR = sqrt(delta_HR - min(delta_HR, na.rm = T))) %>% 
+  lm(transform_delta_HR ~ (HR_self + HR_other):condition, data = .)
+
+
+lmer1 <- lmerTest::lmer(delta_HR ~ 0 + (HR_self + HR_other):condition + (1|participant_id), 
+                        data = master_data, 
+                        control = lme4::lmerControl(optimizer="bobyqa",
+                                 optCtrl=list(maxfun=2e5)))
 
 # Model change as a function of own and other previous state 
-
+summary(lmer1)
 
 # Bonus points: Add to the previous model also change in the other to see whether my adaptation is influenced by the other's adaptation.
 
 ```
+
+# Explore interesting peoples naming choices
+```{r}
+master_data %>% 
+  group_by(participant_id) %>% 
+  count()
+```
+
 
 
 ## Now we need to create control baselines.
