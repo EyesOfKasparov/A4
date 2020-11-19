@@ -338,9 +338,9 @@ lm_transform <- master_data %>%
 
 lmer1 <- lmerTest::lmer(delta_HR ~ 0 + (HR_self + HR_other):condition + (1|participant_id), 
                         data = master_data, 
-                        control = lme4::lmerControl(optimizer="bobyqa",
-                                 optCtrl=list(maxfun=2e5)))
+                        control = lme4::lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5)))
 
+?lme4::lmerControl
 # Model change as a function of own and other previous state 
 summary(lmer1)
 
@@ -382,7 +382,18 @@ Tip: sample() is your friend, but make sure to shuffle things within participant
 ```{r}
 
 # Identify unique pairs within a given study (to keep things manageable) and create list of possible surrogate pairs (e.g. individual 1 from pair 1 and individual 2 from pair 2)
+# Find unique participants
+distinct_pairs <- master_data %>% 
+  filter(condition == "Synchronous") %>% 
+  distinct(pair_id)
 
+shuffled_pairs <- distinct_pairs %>% 
+  sample_frac() %>% 
+  rename(shuffled_pair = pair_id) %>% 
+  bind_cols(distinct_pairs) %>% 
+  mutate(shuffled_person = paste0(shuffled_pair, "_1"))
+
+shuffled_pairs
 # Starting from the wide format, create "surrogate" dataset with the data from surrogate pairs
 
 # Make it into long format
