@@ -175,7 +175,6 @@ df <- sapply(list.files("data", pattern="*.csv",include.dirs = T), function(x) p
   LoadData(threshold)
 
 df$rownum <- round(df$rownum)
-write_csv(df, "data/masterdata/esben.csv")
 ```
 
 
@@ -184,6 +183,13 @@ df <- df %>%
   mutate(ID=paste0(study,group,Participant)) %>% 
   select(ID, everything())
 
+df %>% 
+  ggplot() +
+  aes(color = Participant, x = rownum, y = ECG) +
+  geom_line(alpha=0.9)
+
+
+(df %>% drop_na %>% nrow / df %>% nrow * 100) %>% round %>% paste0("%")
 
 
 # Now we need to make sure all the data are meaningful or something has to be removed
@@ -196,6 +202,13 @@ df <- df %>%
 # Save the data
 
 ```
+
+```{r}
+df <- read_csv("master_data.csv")
+
+
+```
+
 
 ## Now we need to run some analysis
 
