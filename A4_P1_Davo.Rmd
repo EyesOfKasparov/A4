@@ -181,6 +181,32 @@ A couple of tips:
 
 ```{r}
 # Define a function running the loading, artifact removal, scaling, downsampling, info adding.
+# Load the libraries
+library(tidyverse)
+library(fs) 
+library(groupdata2)
+```
+
+
+## Helper functions
+```{r}
+find_outs <- function(vec, threshold) {
+  positive_outliers <- vec > mean(vec, na.rm=T) + (threshold * sd(vec, na.rm = T))
+  negative_outliers <- vec < mean(vec, na.rm=T) - (threshold * sd(vec, na.rm = T))
+  positive_outliers | negative_outliers
+}
+replace_outs <- function(vec, threshold) {
+  if_else(find_outs(vec, threshold), mean(vec, na.rm = T), vec)
+}
+downsample_data <- function(dat) {
+  dat %>%
+    group(100, method = "greedy") %>%
+    summarise(across(where(is_double), mean))
+}
+### Tip: if scale() gives some issues, try the one below
+z_scale <- function(column){
+  (column - mean(column, na.rm = T)) / sd(column, na.rm = T)
+}
 add_metadata <- function(dat, file_name) {
   dat %>%
     mutate(
@@ -188,53 +214,50 @@ add_metadata <- function(dat, file_name) {
       group_nr = str_extract(file_name, "(?<=_G)(\\d)"),
       trial_nr = str_extract(file_name, "(?<=_T)(\\d)"),
       condition = str_extract(file_name, "[a-zA-Z]+(?=\\.csv)"),
-      pair_id = paste(study_nr, group_nr, sep = "_")
+      pair_id = paste(study_nr, group_nr, sep = "_")  
+      # participant_id = paste(pair_id, Participant, sep = "_"),
+      # participant_trial_id = paste(participant_id, trial_nr, sep = "_")
     )
 }
-downsample_data <- function(dat) {
-  dat %>%
-    group(100, method = "greedy") %>%
-    group_by(.groups, Participant) %>%
-    summarise(across(where(is_double), mean))
-}
-
 data_preprocess <- function(filename, threshold = 2.5) {
   raw_dat <- read_csv(filename)  %>%
     mutate(row_num = row_number()) %>% 
     select(row_num, Resp1, Resp2, ECG1, ECG2, HR1, HR2)
  
   # Making into tidy format
-  tidy_data <- raw_dat %>%
-    mutate(row_num = row_number()) %>%
-    pivot_longer(
-      Resp1:HR2,
-      names_to = c(".value", "Participant"),
-      names_pattern = "(Resp|ECG|HR)(\\d)"
-    )
+  tidy_data <- raw_dat 
+  # %>%
+  #   pivot_longer(
+  #     Resp1:HR2,
+  #     names_to = c(".value", "Participant"),
+  #     names_pattern = "(Resp|ECG|HR)(\\d)"
+  #   )
   
   #print(paste0("tidy file: ", filename))
   # removing outliers
   no_outs <- tidy_data %>% 
-    group_by(Participant) %>% 
-    mutate(across(c(Resp, ECG, HR), ~replace_outs(.x, threshold)))
+    # group_by(Participant) %>% 
+    mutate(across(Resp1:HR2, ~replace_outs(.x, threshold)))
   
   #print("remove outliers")
   # downsampling
   downsampled_data <- no_outs %>% 
     downsample_data()
   
-  print("downsampled")
+  #print("downsampled")
   # scaling
-  scaled_data <- downsampled_data %>% 
-    group_by(Participant) %>% 
-    mutate(across(c(Resp, ECG, HR), z_scale))
-  print("scaled")
+  scaled_data <- downsampled_data %>%
+    # group_by(Participant) %>%
+    mutate(across(Resp1:HR2, z_scale))
+  #print("scaled")
   # adding metadata
   d1 <- scaled_data %>% 
     add_metadata(filename)
   #print("added metadata")
   
  # print(paste0("done with ", filename))
+  
+  
   return(d1)
 }
 
@@ -253,7 +276,14 @@ master_data <- all_files %>%
   map_dfr(data_preprocess)
 
 # saving the main data
-write_csv(master_data, 'master_data.csv')
+write_csv(master_data, 'master_data_wide.csv')
+
+ggplot(master_data) +
+  geom_path(aes(x = .groups, y = HR2, color = as.factor(pair_id)), alpha = 0.4) +
+  theme_minimal() +
+  ylim(-10,10) +
+  facet_wrap(as.factor(master_data$pair_id)) +
+  theme(legend.position="none")
 ```
 
 
@@ -263,21 +293,8 @@ write_csv(master_data, 'master_data.csv')
 
 # plots plots plots
 master_data_ID <- master_data %>% 
-  mutate(ID = paste(.groups, study_nr, Participant, sep = ''))
-    
-ggplot(master_data_ID) + 
-  geom_path(aes(ID, HR, color = "Heart")) +
-  labs(x = "time", y = "HR") + 
-  theme_classic()
+  mutate(ID = paste(.groups, study_nr, sep = ''))
 
-ggplot(master_data) +
-  geom_path(aes(time, Resp, color = 'Resp')) +
-  labs(x = 'time', y = 'Resp') +
-  theme_light()
-
-# Remove bad data
-
-# Save the data
 
 ```
 
@@ -308,11 +325,11 @@ Bonus question: what if we include an additional layer? Is my heart rate just ad
 pacman::p_load(tidyverse, fs, groupdata2, lme4)
 
 # reading the data
-master_data <- read_csv("master_data.csv") 
+master_data <- read_csv("master_data_wide.csv") 
 
 # adding the participant ID specific column
 master_data_ID <- master_data %>% 
-  mutate(ID = paste(.groups, study_nr, Participant, sep = '')) %>%
+  mutate(ID = paste(.groups, study_nr, sep = '')) %>%
   mutate(condition = case_when(
     condition == "SelfPaced" ~ "Conversation", 
     condition == "MovementCoop" ~ "Synchronous",
@@ -324,31 +341,32 @@ master_data_ID <- master_data %>%
 # Generate a column for each: change in HR1, HR2, Resp1, Resp2
 master_data_ID <- master_data_ID %>% 
   mutate(file_id = paste(pair_id, trial_nr, sep = "_")) %>% 
-  group_by(file_id, Participant) %>% 
-  mutate(across(Resp:HR, lead, .names = "{.col}_lead")) %>% 
-  mutate(across(Resp:HR, lag, .names = "{.col}_lag"))
+  group_by(file_id) %>% 
+  mutate(across(Resp1:HR2, lead, .names = "{.col}_lead")) %>% 
+  mutate(across(Resp1:HR2, lag, .names = "{.col}_lag"))
 
 
 # Make the data long, so we can analyze both participants at the same time. Tip: you can use the function gather ()
 ## N.B. This is a bit tricky and you might have to do it in several steps
-master_data_ID <- master_data_ID %>% 
-  ungroup() %>% 
-  rename(HR_self = HR) %>% 
-  mutate(HR1 = if_else(Participant == 1, HR_self, NA_real_), 
-         HR2 = if_else(Participant == 2, HR_self, NA_real_)) %>% 
-  fill(HR1) %>% 
-  fill(HR2, .direction = "up") %>% 
-  mutate(HR_other = if_else(Participant == 1, HR2, HR1)) %>% 
-  mutate(delta_HR = HR_lead - HR_self)
+master_data_ID <- master_data_ID %>%
+  # ungroup() %>%
+  # rename(HR_self = HR) %>%
+  # mutate(HR1 = if_else(Participant == 1, HR_self, NA_real_),
+  #        HR2 = if_else(Participant == 2, HR_self, NA_real_)) %>%
+  # fill(HR1) %>%
+  # fill(HR2, .direction = "up") %>%
+  # mutate(HR_other = if_else(Participant == 1, HR2, HR1)) %>%
+  mutate(delta_HR1 = HR1_lead - HR1,
+         delta_HR2 = HR2_lead - HR2)
 
 # plotting
-ggplot(master_data_ID, aes(x = delta_HR)) + 
+ggplot(master_data_ID, aes(x = delta_HR1)) + 
   geom_histogram()
 
 # Set the most interesting contrast e.g. by defining synchronous or conversation as the baseline
 
 # Model change as a function of own and other previous state 
-HR_model1 <- lm(delta_HR ~ 0 + (HR_self + HR_other) : condition, subset(master_data_ID, study_nr == "1" & Participant == 1))
+HR_model1 <- lm(delta_HR1 ~ 0 + (HR1 + HR2) : condition, subset(master_data_ID, study_nr == "1"))
 
 summary(HR_model1)
 
@@ -367,27 +385,33 @@ Shuffled controls break the temporal dependencies of time-series by shuffling th
 Tip: sample() is your friend, but make sure to shuffle things within participant/condition and not throughout the whole dataset
  
 ```{r}
-pacman::p_load(tidyverse)
+pacman::p_load(tidyverse, GLMMadaptive)
 
 # Create a shuffled dataset
 # Concatenate it to the original dataset (and remember to have a column telling you which is which)
-master_data_ID$Type <- "real" 
+master_data_ID$type <- "real" 
 
 master_data_ID_shuffled <- 
   master_data_ID %>%  
-  group_by(Participant, condition) %>% 
+  group_by(condition) %>% 
   mutate(
-    HR_self = sample(HR_self), # randomly samples values from the column
-    HR_other = sample(HR_other),
-    across(Resp:HR_self, lead, .names = "{.col}_lead"),
-    across(Resp:HR_self, lag, .names = "{.col}_lag"),
-    Type = 'shuffled')
+    HR1 = sample(HR1), # randomly samples values from the column
+    HR2 = sample(HR2),
+    across(Resp1:HR2, lead, .names = "{.col}_lead"),
+    across(Resp1:HR2, lag, .names = "{.col}_lag"),
+    across(Resp1:HR2, lag, .names = "{.col}_lag"),
+    type = 'shuffled')
 
-HR_model_shuffled <- lm(delta_HR ~ 0 + (HR_self + HR_other) : condition, subset(master_data_ID_shuffled, study_nr == "1" & Participant == 1))
-
-summary(HR_model_shuffled)
+# merging the data frames
+master_data_ID_shuffled <- master_data_ID %>% 
+  bind_rows(master_data_ID_shuffled) %>% 
+  mutate(type = as.factor(type),
+         HR_diff = HR1 - HR2)
 
 # Create the same models as in the previous chunk, but adding an interaction by shuffled vs. real
+test_lmer_shuffled <- lmerTest::lmer(delta_HR1 ~ 0 + (HR1 + HR2) : condition : type + (1|pair_id),
+                                  data = master_data_ID_shuffled)
+summary(test_lmer_shuffled)
 
 ```
  
