@@ -384,23 +384,53 @@ Tip: sample() is your friend, but make sure to shuffle things within participant
 # Identify unique pairs within a given study (to keep things manageable) and create list of possible surrogate pairs (e.g. individual 1 from pair 1 and individual 2 from pair 2)
 # Find unique participants
 distinct_pairs <- master_data %>% 
-  filter(condition == "Synchronous") %>% 
-  distinct(pair_id)
+  distinct(pair_id, condition)
 
 shuffled_pairs <- distinct_pairs %>% 
+  group_by(condition) %>% 
   sample_frac() %>% 
   rename(shuffled_pair = pair_id) %>% 
-  bind_cols(distinct_pairs) %>% 
-  mutate(shuffled_person = paste0(shuffled_pair, "_1"))
-
-shuffled_pairs
-# Starting from the wide format, create "surrogate" dataset with the data from surrogate pairs
-
-# Make it into long format
+  arrange(condition) %>% 
+  bind_cols(arrange(distinct_pairs, condition)) %>% 
+  mutate(shuffled_person = paste0(shuffled_pair, "_1"), 
+         join_pair_id = paste0(condition...1, pair_id), 
+         shuffled_person = paste0(condition...1, shuffled_person)) %>% 
+  select(join_pair_id, shuffled_person)
 
 # Create models as in chunks above, but adding an interaction with the Real vs. Surrogate variable (exclude shuffled ones for simplicity)
 
+new_master_data <- master_data %>%
+  mutate(join_pair_id = paste0(condition, pair_id)) %>% 
+  left_join(shuffled_pairs) %>% 
+  mutate(join_key = paste0(shuffled_person, Participant, .groups)) %>% 
+  distinct(join_key, .keep_all = T)
 
+master_join_data <- master_data %>% 
+  mutate(join_key = paste0(condition, participant_id, .groups)) %>% 
+  distinct(join_key, .keep_all = T) %>% 
+  select(join_key, HR_shuffled = HR_self)
+
+
+master_data_surrogate <- new_master_data %>% 
+  left_join(master_join_data)  
+
+real_master_data <- master_data_surrogate %>% 
+  select(delta_HR, HR_self, HR_other, participant_id, condition) %>% 
+  mutate(is_surrogate = F)
+
+surrogate_master_data <- master_data_surrogate %>% 
+  select(delta_HR, HR_self, HR_other=HR_shuffled, participant_id, condition) %>% 
+  mutate(is_surrogate = T)
+
+joined_data <- real_master_data %>% 
+  bind_rows(surrogate_master_data)
+
+
+test_lm_surrogate <- lm(delta_HR ~ 0 + (HR_self + HR_shuffled):condition, filter(master_data_surrogate, participant_id == "1_2_2"))
+
+test_lmer_surrogate <- lmerTest::lmer(delta_HR ~ 1 + (HR_self + HR_other):condition:is_surrogate + (1|participant_id), joined_data)
+
+summary(test_lmer_surrogate)
 
 ```
  
