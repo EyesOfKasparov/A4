@@ -346,12 +346,14 @@ lmer1_hr <- lmerTest::lmer(delta_HR ~ 0 + (HR_self + HR_other):condition + (1|pa
                         control = lme4::lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5)))
 
 
-lmer1_resp <- lmerTest::lmer(delta_resp ~ 0 + (resp_self + resp_other):condition + (1|participant_id), 
+lmer1_resp <- lmerTest::lmer(delta_Resp ~ 0 + (Resp_self + Resp_other):condition + (1|participant_id), 
                         data = master_data, 
                         control = lme4::lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5)))
 
 # Model change as a function of own and other previous state 
 summary(lmer1)
+
+summary(lmer1_resp)
 
 # Bonus points: Add to the previous model also change in the other to see whether my adaptation is influenced by the other's adaptation.
 
