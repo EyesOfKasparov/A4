@@ -419,7 +419,7 @@ new_master_data <- master_data %>%
 master_join_data <- master_data %>% 
   mutate(join_key = paste0(condition, participant_id, .groups)) %>% 
   distinct(join_key, .keep_all = T) %>% 
-  select(join_key, HR_shuffled = HR_self) %>% 
+  select(join_key, HR_shuffled = HR_self, Resp_shuffled = Resp_self) %>% 
   drop_na()
 
 new_master_data %>% 
@@ -430,11 +430,12 @@ master_data_surrogate <- new_master_data %>%
 
 
 real_master_data <- master_data_surrogate %>% 
-  select(delta_HR, HR_self, HR_other, participant_id, condition) %>% 
+  select(starts_with("delta_"), ends_with("_self"), ends_with("_other"), participant_id, condition) %>% 
   mutate(is_real_pair = T)
 
 surrogate_master_data <- master_data_surrogate %>% 
-  select(delta_HR, HR_self, HR_other=HR_shuffled, participant_id, condition) %>% 
+  select(starts_with("delta_"), ends_with("_self"), ends_with("_shuffled"), participant_id, condition) %>%
+  rename(HR_other = HR_shuffled, Resp_other = Resp_shuffled) %>% 
   mutate(is_real_pair = F)
 
 surrogate_master_data %>% 
@@ -449,6 +450,15 @@ test_lm_surrogate <- lm(delta_HR ~ 0 + (HR_self + HR_shuffled):condition, filter
 test_lmer_surrogate <- lmerTest::lmer(delta_HR ~ 0 + (HR_self + HR_other)*condition*is_real_pair + (1|participant_id), joined_data)
 
 summary(test_lmer_surrogate)
+
+test_lmer_surrogate_resp <- lmerTest::lmer(delta_Resp ~ 0 + (Resp_self + Resp_other):condition*is_real_pair + (1|participant_id), joined_data)
+
+
+test_lmer_surrogate_resp2 <-lmerTest::lmer(delta_Resp ~ 0 + (Resp_self + Resp_other)*condition*is_real_pair + (1|participant_id), joined_data) 
+
+summary(test_lmer_surrogate_resp)
+summary(test_lmer_surrogate_resp2)
+
 
 joined_data %>% 
   ggplot(aes(x = HR_other, y = delta_HR, color = is_real_pair)) + 
