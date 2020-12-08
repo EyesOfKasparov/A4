@@ -1,0 +1,481 @@
+---
+title: "Assignment 4 - Heart rate, respiration and interpersonal coordination"
+author: "Riccardo Fusaroli"
+date: "August 20, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Assignment 4 - Heart rate, respiration and interpersonal coordination
+
+Physiological data (here heart rate [variability], and respiration) are increasingly popular. Historically treated as pernicious noise to be regressed out of neuro-imaging data, there is now increasing research on how these signals tell us something important about cognition and beyond being just a signal of cognitive processes also impact them in interesting ways. Advanced sport science, and the quantified self movement (closely followed by marketing and communication) have hailed continuous physiological tracking as a powerful way to access and modify attitudes, habits, and performance. Further, as team coordination (in the military, in decision processes and organizational contexts) is more and more in focus, research has attempted to measure how interpersonal coordination between physiological systems might tell us something important about e.g. emotional and cognitive coordination. See references in the reading list for more on this.
+
+In this assignment, you will learn to:
+- pre-process physiological data (and grow further your mad R skills)
+- model the continuous interdependence between two signals (using a multilevel model as proxy for a dynamical system approach)
+- conservatively assess the presence of coordination between to signals in a controlled context
+
+This assignment has two parts. The first part familiarizes you with heart rate, and respiration data and their preprocessing. The second part explores how to analyze interpersonal coordination of these signals.
+
+These are the questions you need to be able to answer at the end of the assignment (aka that you need to submit as part of the portfolio)
+
+1) How do you preprocess heart rate and respiration data? Describe the process. If any data needs to be excluded, list the excluded data and motivate the exclusion.
+
+2) Do you observe interpersonal coordination in heart rate and respiration? Describe your control baseline, the method used to quantify coordination, and the statistical models used to infer whether coordination was higher than in the baseline. Report the results of the models.
+
+3) Do you observe differences in coordination between conditions? Report the models and results.
+
+4) Is respiration coordination a likely driver of heart rate coordination? Describe how you would test for it. Bonus points if you actually run the tests and report methods and results.
+
+N.B. N.B. The data are collected by students from previous years (Study 1 - 4). Note that synchronous and turn-taking are the same across all four studies, but the third condition is different: in the first year it was self-paced joint reading; in the second to fourth years it was the tv-series conversation.
+
+## Let's get started
+
+### Exploring physiological signals
+The data files can be found here: https://www.dropbox.com/sh/bvvk7t3fvsplh9o/AADM6q4WrtXKvSwH5aAO1umta?dl=0
+
+- Choose one pair (one pair, three conditions, three files)
+- Load the logs
+- Produce a plot of the participants' respiration signal and a different one of the participants' HR signal.
+  N.B: remember the slides: artifacts, downsampling, scaling.
+  N.B. The gridExtra::grid.arrange() function allows you to display the plots side by side. E.g. grid.arrange(plot1, plot2, plot3, ncol=3). There are also smarter packages, like cowplot and ggpubr.
+- Can you eye-ball which condition if any displays more physiological coordination?
+
+### First we read one data file and identify the procedure
+- Load the file
+- correctly identify all columns
+- plot the data
+- deal with the artifacts
+- downsample the data
+- Add a column for study, group, trial and condition
+
+## Library
+```{r}
+# Load the libraries
+library(tidyverse)
+library(fs) 
+library(groupdata2)
+```
+
+
+## Helper functions
+```{r}
+find_outs <- function(vec, threshold) {
+  positive_outliers <- vec > mean(vec, na.rm=T) + (threshold * sd(vec, na.rm = T))
+  negative_outliers <- vec < mean(vec, na.rm=T) - (threshold * sd(vec, na.rm = T))
+  positive_outliers | negative_outliers
+}
+
+replace_outs <- function(vec, threshold) {
+  if_else(find_outs(vec, threshold), mean(vec, na.rm = T), vec)
+}
+
+
+downsample_data <- function(dat) {
+  dat %>%
+    group(100, method = "greedy") %>%
+    group_by(.groups, Participant) %>%
+    summarise(across(where(is_double), mean))
+}
+
+### Tip: if scale() gives some issues, try the one below
+z_scale <- function(column){
+  (column - mean(column, na.rm = T)) / sd(column, na.rm = T)
+}
+
+add_metadata <- function(dat, file_name) {
+  dat %>%
+    mutate(
+      study_nr = str_extract(file_name, "(?<=Study)(\\d)"),
+      group_nr = str_extract(file_name, "(?<=_G)(\\d)"),
+      trial_nr = str_extract(file_name, "(?<=_T)(\\d)"),
+      condition = str_extract(file_name, "[a-zA-Z]+(?=\\.csv)"),
+      pair_id = paste(study_nr, group_nr, sep = "_"),  
+      participant_id = paste(pair_id, Participant, sep = "_"),
+      participant_trial_id = paste(participant_id, trial_nr, sep = "_")
+    )
+}
+
+data_preprocess <- function(filename, threshold = 2.5) {
+  raw_dat <- read_csv(filename)  %>%
+    mutate(row_num = row_number()) %>% 
+    select(row_num, Resp1, Resp2, ECG1, ECG2, HR1, HR2)
+ 
+  # Making into tidy format
+  tidy_data <- raw_dat %>%
+    pivot_longer(
+      Resp1:HR2,
+      names_to = c(".value", "Participant"),
+      names_pattern = "(Resp|ECG|HR)(\\d)"
+    )
+  
+  #print(paste0("tidy file: ", filename))
+  # removing outliers
+  no_outs <- tidy_data %>% 
+    group_by(Participant) %>% 
+    mutate(across(c(Resp, ECG, HR), ~replace_outs(.x, threshold)))
+  
+  #print("remove outliers")
+  # downsampling
+  downsampled_data <- no_outs %>% 
+    downsample_data()
+  
+  #print("downsampled")
+  # scaling
+  scaled_data <- downsampled_data %>% 
+    group_by(Participant) %>% 
+    mutate(across(c(Resp, ECG, HR), z_scale))
+  #print("scaled")
+  # adding metadata
+  d1 <- scaled_data %>% 
+    add_metadata(filename)
+  #print("added metadata")
+  
+ # print(paste0("done with ", filename))
+  
+  
+  return(d1)
+}
+```
+
+```{r}
+
+
+# Load the file
+test_file <- "./data/Study1_G2_T1_TurnTaking.csv"
+example_data_raw <- read_csv(test_file)
+
+# Making into tidy format
+example_data <- example_data_raw %>%
+  mutate(row_num = row_number()) %>%
+  pivot_longer(Resp1:HR2,
+               names_to = c(".value", "Participant"),
+               names_pattern = "(Resp|ECG|HR)(\\d)")
+
+
+example_data_raw %>% 
+  ggplot(aes(x = Resp1)) + 
+  geom_histogram()
+
+
+## Remove outliers
+
+### Tip, check the function below. This is the function explained in the video lecture
+
+
+
+threshold=3 # Default value at 2.5 sds from the mean. But you can increase it, if you want.
+
+
+# Plot raw data against those with the artifacts removed
+outlier_plot <- example_data %>% 
+  ggplot(aes(x = row_num, y = Resp, colour = Participant)) + 
+  geom_path()
+
+example_no_out <- example_data %>% 
+  group_by(Participant) %>% 
+  mutate(across(c(Resp, ECG, HR), ~replace_outs(.x, threshold)))
+
+no_out_plot <- example_no_out %>% 
+  ggplot(aes(x = row_num, y = Resp, colour = Participant)) + 
+  geom_path()
+
+ggpubr::ggarrange(outlier_plot, no_out_plot, nrow = 2)
+
+
+
+## Scale
+### Tip: if scale() gives some issues, try the one below
+
+
+# Plot again to check how scaled data look like
+example_data_scaled <- example_data %>% 
+  mutate(across(c(ECG, HR, Resp), z_scale))
+
+example_data_scaled %>% 
+  
+  ggplot(aes(x = row_num, y = HR, colour = Participant)) + 
+  geom_path()
+
+
+
+## Downsample
+### You can use the code below. It is almost the same as the one in the video lecture.
+#d1 = d %>%
+#  group(n = 100, method = 'greedy') %>%
+#  dplyr::summarise(
+#    time = mean(time,na.rm=T),
+#    HR1 = mean(HR1S,na.rm=T),
+#    HR2 = mean(HR2S,na.rm=T),
+#    Resp1 = mean(Resp1S,na.rm=T),
+#    Resp2 = mean(Resp2S,na.rm=T),
+#    rowname = rowname[1]) #the index we use to put them back together 
+
+
+
+
+```
+
+
+
+
+
+
+## Now we are ready to go to load and pre-process all files
+
+Go through all the files (with a function passed onto map_df), check which files should be excluded, if any, and save the pre-processed time-series. This procedure is similar to what you have done in portfolio 3. You may use the code you wrote for that assignment and adjust it to this one.
+
+A couple of tips:
+- looping will be too slow for these files (remember you have ~200 000 rows in each file!). Making a function and using Map/Map_df is your salvation.
+- you may want your first step after loading a file to be downsampling, so that you don't work with enormous amount of data
+- each study restarts the group numbering, so you should make sure to change that (e.g. 100 * Study + Group)
+- you need to make sure all the data are meaningful or something has to be removed. Plotting is your friend. E.g. "Study1_G1_T1_Synchronous" has one bad respiration signal. We could replace it with NAs
+
+
+```{r}
+# Define a function running the loading, artifact removal, scaling, downsampling, info adding.
+
+
+
+#  Identify all files to be read
+all_files <- fs::dir_ls(path = "./data", glob = "*.csv")
+
+# Run the function on the whole dataset using map_df
+master_data <- all_files %>% 
+  map_dfr(data_preprocess)
+         
+write_csv(master_data, "master_data.csv")
+
+# Now we need to make sure all the data are meaningful or something has to be removed
+# E.g. "Study1_G1_T1_Synchronous" has one bad respiration signal. We could replace it with NAs
+
+# plots plots plots
+
+# Remove bad data
+
+# Save the data
+
+```
+
+## Now we need to run some analysis
+
+Let's start with a multilevel model that accounts for 
+- stability (how each signal is autocorrelated)
+- interpersonal dependence (each signal is dependent from the previous state of the other signal)
+
+The data needs to be further prepared, so we can analyze both participants in the same model.
+We need to turn the data into a long format:
+- a column indicating own hr and one own respiration
+- a column indicating other hr and one other respiration
+- a column indicating change in hr from previous round and one in respiration
+
+We can then run an analysis where change is a function of one's previous state (stability, see slides), and the other's previous state (coupling). Make sure to:
+- set up the most interesting contrasts: how do these parameters vary by condition? which condition should be baseline?
+- set up the right random effects.
+- N.B. the model will be slow. Make sure it works on a subset of the data first!
+
+Bonus question: what if we include an additional layer? Is my heart rate just adjusting to yours, or also to how much you are adjusting to mine?
+- to start answering this we can add a column indicating the previous change in hr in the other and one in respiration
+- we can then build on the previous models by also adding the previous change in the other
+
+
+```{r}
+
+master_data <- read_csv("master_data.csv")
+
+# Generate a column for each: previous HR1, HR2, Resp1, Resp2. Tip: use the function Lag()
+# Generate a column for each: change in HR1, HR2, Resp1, Resp2
+master_data <- master_data %>% 
+  mutate(file_id = paste(pair_id, trial_nr, sep="_")) %>% 
+  group_by(file_id, Participant) %>% 
+  mutate(across(Resp:HR, ~lead(.x, n = 5), .names = "{.col}_lead")) %>% 
+  mutate(condition = case_when(
+    condition == "SelfPaced" ~ "Conversation", 
+    condition == "MovementCoop" ~ "Synchronous",
+    condition == "MovementGuided" ~ "TurnTaking",
+    TRUE ~ condition
+  ))
+
+
+# Make the data long, so we can analyze both participants at the same time. Tip: you can use the function gather () 
+## N.B. This is a bit tricky and you might have to do it in several steps
+master_data <- master_data %>% 
+  ungroup() %>% 
+  rename(HR_self = HR, 
+         Resp_self = Resp) %>% 
+  mutate(HR1 = if_else(Participant == 1, HR_self, NA_real_), 
+         HR2 = if_else(Participant == 2, HR_self, NA_real_), 
+         Resp1 = if_else(Participant == 1, Resp_self, NA_real_), 
+         Resp2 = if_else(Participant == 2, Resp_self, NA_real_),) %>% 
+  fill(HR1, Resp1) %>% 
+  fill(HR2, Resp2, .direction = "up") %>% 
+  mutate(HR_other = if_else(Participant == 1, HR2, HR1), 
+         Resp_other = if_else(Participant == 1, Resp2, Resp1)) %>% 
+  mutate(delta_HR = HR_lead - HR_self, 
+         delta_Resp = Resp_lead - Resp_self)
+
+
+master_data %>% 
+  ggplot(aes(x = delta_HR)) + 
+  geom_histogram()
+
+
+# Set the most interesting contrast e.g. by defining synchronous or conversation as the baseline
+# lmer(HR_self ~ 0 + (HR_self_lag + HR_other_lag):condition +
+#        (1 + ....),
+#      data...
+lm1 <- master_data %>% 
+  filter(participant_id == 	"3_8_2") %>% 
+  lm(delta_HR ~ 0 + (HR_self + HR_other):condition, data = .)
+plot(lm1)
+
+summary(lm1)
+
+lm_transform <- master_data %>% 
+  filter(participant_id == 	"3_8_2") %>%
+  mutate(transform_delta_HR = sqrt(delta_HR - min(delta_HR, na.rm = T))) %>% 
+  lm(transform_delta_HR ~ (HR_self + HR_other):condition, data = .)
+
+
+lmer1_hr <- lmerTest::lmer(delta_HR ~ 0 + (HR_self + HR_other):condition + (1|participant_id), 
+                        data = master_data, 
+                        control = lme4::lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5)))
+
+
+lmer1_resp <- lmerTest::lmer(delta_Resp ~ 0 + (Resp_self + Resp_other):condition + (1|participant_id), 
+                        data = master_data, 
+                        control = lme4::lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5)))
+
+# Model change as a function of own and other previous state 
+summary(lmer1)
+
+summary(lmer1_resp)
+
+# Bonus points: Add to the previous model also change in the other to see whether my adaptation is influenced by the other's adaptation.
+
+```
+
+# Explore interesting peoples naming choices
+```{r}
+master_data %>% 
+  group_by(participant_id) %>% 
+  count()
+```
+
+
+
+## Now we need to create control baselines.
+
+First shuffled controls, then surrogate pairs.
+
+### Creating controls: shuffled controls
+
+Shuffled controls break the temporal dependencies of time-series by shuffling the value within one time-series. This ensures the "coordination" observed is not due to the actual values in the series and not their sequence.
+Tip: sample() is your friend, but make sure to shuffle things within participant/condition and not throughout the whole dataset
+ 
+```{r}
+
+# Create a shuffled dataset
+# Concatenate it to the original dataset (and remember to have a column telling you which is which)
+
+# Create the same models as in the previous chunk, but adding an interaction by shuffled vs. real
+
+```
+ 
+ 
+### TRICKY! Creating controls: surrogate pair controls
+ - Per each real pair, identify at least one surrogate pair (matching one of the participants, with somebody doing the same task, but in a different pair)
+
+```{r}
+
+# Identify unique pairs within a given study (to keep things manageable) and create list of possible surrogate pairs (e.g. individual 1 from pair 1 and individual 2 from pair 2)
+# Find unique participants
+distinct_pairs <- master_data %>% 
+  distinct(pair_id, condition)
+
+shuffled_pairs <- distinct_pairs %>% 
+  group_by(condition) %>% 
+  sample_frac() %>% 
+  rename(shuffled_pair = pair_id) %>% 
+  arrange(condition) %>% 
+  bind_cols(arrange(distinct_pairs, condition)) %>% 
+  mutate(shuffled_person = paste0(shuffled_pair, "_1"), 
+         join_pair_id = paste0(condition...1, pair_id), 
+         shuffled_person = paste0(condition...1, shuffled_person)) %>% 
+  select(join_pair_id, shuffled_person)
+
+# Create models as in chunks above, but adding an interaction with the Real vs. Surrogate variable (exclude shuffled ones for simplicity)
+
+new_master_data <- master_data %>%
+  mutate(join_pair_id = paste0(condition, pair_id)) %>% 
+  left_join(shuffled_pairs) %>% 
+  mutate(join_key = paste0(shuffled_person, Participant, .groups)) %>% 
+  distinct(join_key, .keep_all = T)
+
+master_join_data <- master_data %>% 
+  mutate(join_key = paste0(condition, participant_id, .groups)) %>% 
+  distinct(join_key, .keep_all = T) %>% 
+  select(join_key, HR_shuffled = HR_self, Resp_shuffled = Resp_self) %>% 
+  drop_na()
+
+new_master_data %>% 
+  summarise(sum(is.na(HR_other)))
+
+master_data_surrogate <- new_master_data %>% 
+  left_join(master_join_data)
+
+
+real_master_data <- master_data_surrogate %>% 
+  select(starts_with("delta_"), ends_with("_self"), ends_with("_other"), participant_id, condition) %>% 
+  mutate(is_real_pair = T)
+
+surrogate_master_data <- master_data_surrogate %>% 
+  select(starts_with("delta_"), ends_with("_self"), ends_with("_shuffled"), participant_id, condition) %>%
+  rename(HR_other = HR_shuffled, Resp_other = Resp_shuffled) %>% 
+  mutate(is_real_pair = F)
+
+surrogate_master_data %>% 
+  summarise(sum(is.na(HR_other)))
+
+joined_data <- real_master_data %>% 
+  bind_rows(surrogate_master_data)
+
+
+test_lm_surrogate <- lm(delta_HR ~ 0 + (HR_self + HR_shuffled):condition, filter(master_data_surrogate, participant_id == "1_2_2"))
+
+test_lmer_surrogate <- lmerTest::lmer(delta_HR ~ 0 + (HR_self + HR_other)*condition*is_real_pair + (1|participant_id), joined_data)
+
+summary(test_lmer_surrogate)
+
+test_lmer_surrogate_resp <- lmerTest::lmer(delta_Resp ~ 0 + (Resp_self + Resp_other):condition*is_real_pair + (1|participant_id), joined_data)
+
+
+test_lmer_surrogate_resp2 <-lmerTest::lmer(delta_Resp ~ 0 + (Resp_self + Resp_other)*condition*is_real_pair + (1|participant_id), joined_data) 
+
+summary(test_lmer_surrogate_resp)
+summary(test_lmer_surrogate_resp2)
+
+
+joined_data %>% 
+  ggplot(aes(x = HR_other, y = delta_HR, color = is_real_pair)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  facet_wrap(~condition)
+
+```
+
+### Finding missing 
+```{r}
+joined_data %>% 
+  summarise(across(everything(), ~sum(is.na(.x))))
+```
+
+### Effects of respiration coordination on heart rate coordination
+ - describe how you would test those.
+ - Optional: run the models and report them
+
+ 
