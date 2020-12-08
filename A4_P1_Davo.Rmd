@@ -357,7 +357,9 @@ master_data_ID <- master_data_ID %>%
   # fill(HR2, .direction = "up") %>%
   # mutate(HR_other = if_else(Participant == 1, HR2, HR1)) %>%
   mutate(delta_HR1 = HR1_lead - HR1,
-         delta_HR2 = HR2_lead - HR2)
+         delta_HR2 = HR2_lead - HR2) %>% 
+  mutate(delta_Resp1 = Resp1_lead - Resp1,
+         delta_Resp2 = Resp2_lead - Resp2)
 
 # plotting
 ggplot(master_data_ID, aes(x = delta_HR1)) + 
@@ -366,9 +368,13 @@ ggplot(master_data_ID, aes(x = delta_HR1)) +
 # Set the most interesting contrast e.g. by defining synchronous or conversation as the baseline
 
 # Model change as a function of own and other previous state 
-HR_model1 <- lm(delta_HR1 ~ 0 + (HR1 + HR2) : condition, subset(master_data_ID, study_nr == "1"))
+HR_model1 <- lm(delta_HR1 ~ 0 + (HR1 - HR2) : condition,
+                master_data_ID)
+Resp_model1 <- lm(delta_Resp1 ~ 0 + (Resp1 - Resp2) : condition, 
+                  master_data_ID)
 
 summary(HR_model1)
+summary(Resp_model1)
 
 # Bonus points: Add to the previous model also change in the other to see whether my adaptation is influenced by the other's adaptation.
 
@@ -385,7 +391,7 @@ Shuffled controls break the temporal dependencies of time-series by shuffling th
 Tip: sample() is your friend, but make sure to shuffle things within participant/condition and not throughout the whole dataset
  
 ```{r}
-pacman::p_load(tidyverse, GLMMadaptive)
+pacman::p_load(tidyverse)
 
 # Create a shuffled dataset
 # Concatenate it to the original dataset (and remember to have a column telling you which is which)
@@ -397,8 +403,9 @@ master_data_ID_shuffled <-
   mutate(
     HR1 = sample(HR1), # randomly samples values from the column
     HR2 = sample(HR2),
+    Resp1 = sample(Resp1),
+    Resp2 = sample(Resp2),
     across(Resp1:HR2, lead, .names = "{.col}_lead"),
-    across(Resp1:HR2, lag, .names = "{.col}_lag"),
     across(Resp1:HR2, lag, .names = "{.col}_lag"),
     type = 'shuffled')
 
@@ -406,12 +413,16 @@ master_data_ID_shuffled <-
 master_data_ID_shuffled <- master_data_ID %>% 
   bind_rows(master_data_ID_shuffled) %>% 
   mutate(type = as.factor(type),
-         HR_diff = HR1 - HR2)
+         HR_diff = HR1 - HR2,
+         Resp_diff = Resp1 - Resp2)
 
 # Create the same models as in the previous chunk, but adding an interaction by shuffled vs. real
-test_lmer_shuffled <- lmerTest::lmer(delta_HR1 ~ 0 + (HR1 + HR2) : condition : type + (1|pair_id),
+HR_lmer_shuffled <- lmerTest::lmer(delta_HR1 ~ 0 + (HR1 + HR2) : condition : type + (1|pair_id),
                                   data = master_data_ID_shuffled)
-summary(test_lmer_shuffled)
+Resp_lmer_shuffled <- lmerTest::lmer(delta_Resp1 ~ 0 + (Resp1 + Resp2) : condition : type + (1|pair_id), 
+                                     data = master_data_ID_shuffled)
+summary(HR_lmer_shuffled)
+summary(Resp_lmer_shuffled)
 
 ```
  
